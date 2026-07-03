@@ -58,6 +58,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SmokeTestError as exc:
         print(str(exc))
         return 13
+    except ExceptionGroup as exc:
+        smoke_error = _find_smoke_test_error(exc)
+        if smoke_error is None:
+            raise
+        print(str(smoke_error))
+        return 13
     except TimeoutError:
         print("MCP tool smoke-test timed out.")
         return 13
@@ -85,3 +91,14 @@ def _resolve_config(args) -> SmokeToolConfig:
         require_metadata_vector_index=not bool(args.allow_metadata_fallback),
         require_code_vector_index=not bool(args.allow_code_fallback),
     )
+
+
+def _find_smoke_test_error(exc: BaseException) -> SmokeTestError | None:
+    if isinstance(exc, SmokeTestError):
+        return exc
+    if isinstance(exc, BaseExceptionGroup):
+        for nested in exc.exceptions:
+            found = _find_smoke_test_error(nested)
+            if found is not None:
+                return found
+    return None
