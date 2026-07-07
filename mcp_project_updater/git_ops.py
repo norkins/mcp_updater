@@ -116,12 +116,6 @@ def validate_repo(repo_path: Path, runner: CommandRunner = default_command_runne
         else:
             tracked_changes.append(line)
 
-    if tracked_changes:
-        raise GitOperationError(
-            _format_tracked_changes_error(repo_path, tracked_changes),
-            ExitCode.GIT_TRACKED_CHANGES,
-        )
-
     return RepoValidationResult(
         inside_work_tree=True,
         tracked_changes=tracked_changes,
@@ -134,6 +128,14 @@ def clean_untracked_changes(
     runner: CommandRunner = default_command_runner,
 ) -> list[str]:
     result = _run_git(repo_path, ["git", "clean", "-ffdx"], runner, ExitCode.GIT_PULL_FAILED)
+    return [line for line in result.stdout.splitlines() if line.strip()]
+
+
+def discard_tracked_changes(
+    repo_path: Path,
+    runner: CommandRunner = default_command_runner,
+) -> list[str]:
+    result = _run_git(repo_path, ["git", "reset", "--hard", "HEAD"], runner, ExitCode.GIT_PULL_FAILED)
     return [line for line in result.stdout.splitlines() if line.strip()]
 
 
@@ -239,21 +241,6 @@ def _resolve_repo_child(repo_path: Path, relative_path: str) -> Path:
 
 def _render_pull_mode_flag(pull_mode: str) -> str:
     return pull_mode if pull_mode.startswith("--") else f"--{pull_mode}"
-
-
-def _format_tracked_changes_error(repo_path: Path, tracked_changes: list[str]) -> str:
-    max_lines = 50
-    visible_changes = tracked_changes[:max_lines]
-    lines = [
-        f"Tracked Git changes detected in repository: {repo_path}",
-        "Changed tracked paths from git status --porcelain:",
-        *[f"  {change}" for change in visible_changes],
-    ]
-    hidden_count = len(tracked_changes) - len(visible_changes)
-    if hidden_count > 0:
-        lines.append(f"  ... and {hidden_count} more tracked changes")
-    lines.append("Updater does not discard tracked changes automatically. Review the repository and reset or commit changes before rerun.")
-    return "\n".join(lines)
 
 
 def _with_auth_options(

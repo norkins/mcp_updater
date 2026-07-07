@@ -13,6 +13,7 @@ from mcp_project_updater.git_ops import (
     clean_untracked_changes,
     default_command_runner,
     determine_target_commit,
+    discard_tracked_changes,
     ensure_repo_available,
     validate_repo,
 )
@@ -50,20 +51,15 @@ def test_validate_repo_without_changes() -> None:
     assert len(calls) == 2
 
 
-def test_validate_repo_with_tracked_changes_raises() -> None:
+def test_validate_repo_collects_tracked_changes() -> None:
     def runner(command, cwd):
         if command[2] == "--is-inside-work-tree":
             return CommandResult(0, "true\n", "")
         return CommandResult(0, " M tracked.txt\n", "")
 
-    with pytest.raises(GitOperationError) as exc:
-        validate_repo(Path("."), runner)
+    result = validate_repo(Path("."), runner)
 
-    assert exc.value.exit_code == ExitCode.GIT_TRACKED_CHANGES
-    assert "Tracked Git changes detected in repository: ." in str(exc.value)
-    assert "Changed tracked paths from git status --porcelain:" in str(exc.value)
-    assert "  M tracked.txt" in str(exc.value)
-    assert "does not discard tracked changes automatically" in str(exc.value)
+    assert result.tracked_changes == [" M tracked.txt"]
 
 
 def test_validate_repo_collects_untracked_changes() -> None:
@@ -88,6 +84,19 @@ def test_clean_untracked_changes_runs_git_clean() -> None:
 
     assert removed == ["Removing new.txt", "Removing generated/"]
     assert calls == [(["git", "clean", "-ffdx"], cwd)]
+
+
+def test_discard_tracked_changes_runs_git_reset_hard() -> None:
+    calls = []
+
+    def runner(command, cwd):
+        calls.append((command, cwd))
+        return CommandResult(0, "HEAD is now at abc123 commit\n", "")
+
+    output = discard_tracked_changes(cwd := Path("."), runner)
+
+    assert output == ["HEAD is now at abc123 commit"]
+    assert calls == [(["git", "reset", "--hard", "HEAD"], cwd)]
 
 
 def test_default_command_runner_decodes_git_output_as_utf8(monkeypatch) -> None:

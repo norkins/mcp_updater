@@ -10,7 +10,7 @@ from .config import InfrastructureSmokeConfig, ProjectConfig, load_project_confi
 from .constants import ExitCode, REPORT_FILE_NAME
 from .docker_ops import default_docker_runner, ensure_docker_available, write_container_logs
 from .fingerprints import compute_report_hash, compute_source_fingerprint
-from .git_ops import clean_untracked_changes, determine_target_commit, ensure_repo_available, validate_repo
+from .git_ops import clean_untracked_changes, determine_target_commit, discard_tracked_changes, ensure_repo_available, validate_repo
 from .lock import LockManager
 from .mcp_container import start_build_container
 from .metadata_repair import run_metadata_index_repair
@@ -196,12 +196,24 @@ def run_update(config: ProjectConfig, options: CliOptions, *, log_path: Path) ->
         stage = "git_validation"
         repo_validation = validate_repo(config.repo.path)
         if options.no_git_pull:
+            if repo_validation.tracked_changes:
+                logger.warning(
+                    "Tracked Git changes detected and left in place because --no-git-pull is set: %s",
+                    repo_validation.tracked_changes,
+                )
             if repo_validation.untracked_changes:
                 logger.warning(
                     "Untracked Git changes detected and left in place because --no-git-pull is set: %s",
                     repo_validation.untracked_changes,
                 )
         else:
+            if repo_validation.tracked_changes:
+                logger.warning(
+                    "Tracked Git changes detected in managed repository; discarding before pull: %s",
+                    repo_validation.tracked_changes,
+                )
+                reset_output = discard_tracked_changes(config.repo.path)
+                logger.info("Discarded tracked Git changes before pull: %s", reset_output or "<none>")
             if repo_validation.untracked_changes:
                 logger.warning(
                     "Untracked Git changes detected in managed repository; cleaning before pull: %s",

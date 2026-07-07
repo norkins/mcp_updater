@@ -257,6 +257,42 @@ def test_main_cleans_untracked_repo_before_pull(tmp_path: Path, monkeypatch) -> 
     assert order == ["clean", "determine"]
 
 
+def test_main_discards_tracked_repo_changes_before_pull(tmp_path: Path, monkeypatch) -> None:
+    config_path = _write_config(tmp_path)
+    order = []
+
+    monkeypatch.setattr("mcp_project_updater.cli.ensure_repo_available", lambda repo, no_git_pull, env=None: None)
+    monkeypatch.setattr(
+        "mcp_project_updater.cli.validate_repo",
+        lambda repo_path: RepoValidationResult(
+            inside_work_tree=True,
+            tracked_changes=[" M tracked.xml"],
+            untracked_changes=["?? generated.xml"],
+        ),
+    )
+
+    def _discard(repo_path):
+        order.append("reset")
+        return ["HEAD is now at abc123 commit"]
+
+    def _clean(repo_path):
+        order.append("clean")
+        return ["Removing generated.xml"]
+
+    def _determine(repo, no_git_pull, env=None):
+        order.append("determine")
+        return "abc123"
+
+    monkeypatch.setattr("mcp_project_updater.cli.discard_tracked_changes", _discard)
+    monkeypatch.setattr("mcp_project_updater.cli.clean_untracked_changes", _clean)
+    monkeypatch.setattr("mcp_project_updater.cli.determine_target_commit", _determine)
+
+    result = main(["--config", str(config_path), "--dry-run"])
+
+    assert result == ExitCode.SUCCESS
+    assert order == ["reset", "clean", "determine"]
+
+
 def test_main_cleans_ignored_repo_files_before_pull_even_when_status_is_clean(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
     order = []
@@ -296,9 +332,13 @@ def test_main_no_git_pull_leaves_untracked_repo_in_place(tmp_path: Path, monkeyp
         "mcp_project_updater.cli.validate_repo",
         lambda repo_path: RepoValidationResult(
             inside_work_tree=True,
-            tracked_changes=[],
+            tracked_changes=[" M tracked.xml"],
             untracked_changes=["?? generated.xml"],
         ),
+    )
+    monkeypatch.setattr(
+        "mcp_project_updater.cli.discard_tracked_changes",
+        lambda repo_path: (_ for _ in ()).throw(AssertionError("reset must not run")),
     )
     monkeypatch.setattr(
         "mcp_project_updater.cli.clean_untracked_changes",
