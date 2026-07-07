@@ -60,6 +60,10 @@ def test_validate_repo_with_tracked_changes_raises() -> None:
         validate_repo(Path("."), runner)
 
     assert exc.value.exit_code == ExitCode.GIT_TRACKED_CHANGES
+    assert "Tracked Git changes detected in repository: ." in str(exc.value)
+    assert "Changed tracked paths from git status --porcelain:" in str(exc.value)
+    assert "  M tracked.txt" in str(exc.value)
+    assert "does not discard tracked changes automatically" in str(exc.value)
 
 
 def test_validate_repo_collects_untracked_changes() -> None:
